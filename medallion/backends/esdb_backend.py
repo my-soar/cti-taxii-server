@@ -1,8 +1,8 @@
 import logging
 import uuid
 
-from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+from elasticsearch import Elasticsearch, helpers, exceptions
+
 
 from ..common import (
     SessionChecker, create_resource, datetime_to_float, datetime_to_string,
@@ -11,7 +11,7 @@ from ..common import (
     get_custom_headers, get_timestamp, parse_request_parameters,
     string_to_datetime
 )
-from ..exceptions import MongoBackendError, ProcessingError
+from ..exceptions import ESBackendError, ProcessingError
 from ..filters.mongodb_filter import MongoDBFilter
 from .base import Backend
 
@@ -19,29 +19,29 @@ from .base import Backend
 log = logging.getLogger(__name__)
 
 
-def catch_mongodb_error(func):
+def catch_esdb_error(func):
     """Catch mongodb availability error"""
 
     def api_wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except (ConnectionFailure, ServerSelectionTimeoutError) as e:
-            raise MongoBackendError("Unable to connect to MongoDB", 500, e)
+        except (exceptions.ConnectionError, exceptions.ConnectionTimeout) as e:
+            raise ESBackendError("Unable to connect to ElasticSearch", 500, e)
 
     return api_wrapper
 
 
-class MongoBackend(Backend):
+class ESBackend(Backend):
 
     # access control is handled at the views level
 
     def __init__(self, **kwargs):
         try:
-            self.client = MongoClient(kwargs.get("uri"))
+            self.client = Elasticsearch(kwargs.get("uri"))
             self.pages = {}
             self.timeout = kwargs.get("session_timeout", 30)
-        except ConnectionFailure:
-            log.error("Unable to establish a connection to MongoDB server {}".format(kwargs.get("uri")))
+        except exceptions.ConnectionError:
+            log.error("Unable to establish a connection to ElasticSearch server {}".format(kwargs.get("uri")))
 
         checker = SessionChecker(kwargs.get("check_interval", 10), self._pop_expired_sessions)
         checker.start()
@@ -122,7 +122,7 @@ class MongoBackend(Backend):
             headers = get_custom_headers(manifest_resource)
             return manifest_resource, headers
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def _update_manifest(self, api_root, collection_id, media_type):
         api_root_db = self.client[api_root]
         collection_info = api_root_db["collections"]
@@ -136,7 +136,7 @@ class MongoBackend(Backend):
                 {"$set": {"media_types": info["media_types"]}}
             )
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def server_discovery(self):
         discovery_db = self.client["discovery_database"]
         discovery_info = discovery_db["discovery_information"]
@@ -162,10 +162,9 @@ class MongoBackend(Backend):
             }
         ]
         info = discovery_info.aggregate(pipeline).next()
-        print (info)
         return info
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def get_collections(self, api_root):
         if api_root not in self.client.list_database_names():
             return None  # must return None, so 404 is raised
@@ -175,7 +174,7 @@ class MongoBackend(Backend):
         collections = list(collection_info.find({}, {"_id": 0}))
         return create_resource("collections", collections)
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def get_collection(self, api_root, collection_id):
         if api_root not in self.client.list_database_names():
             return None  # must return None, so 404 is raised
@@ -185,11 +184,11 @@ class MongoBackend(Backend):
         info = collection_info.find_one({"id": collection_id}, {"_id": 0})
         return info
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def get_object_manifest(self, api_root, collection_id, filter_args, allowed_filters, limit):
         return self._get_object_manifest(api_root, collection_id, filter_args, allowed_filters, limit, False)
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def get_api_root_information(self, api_root_name):
         db = self.client["discovery_database"]
         api_root_info = db["api_root_info"]
@@ -199,7 +198,7 @@ class MongoBackend(Backend):
         )
         return info
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def get_status(self, api_root, status_id):
         api_root_db = self.client[api_root]
         status_info = api_root_db["status"]
@@ -209,7 +208,7 @@ class MongoBackend(Backend):
         )
         return result
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def get_objects(self, api_root, collection_id, filter_args, allowed_filters, limit):
         api_root_db = self.client[api_root]
         objects_info = api_root_db["objects"]
@@ -241,7 +240,7 @@ class MongoBackend(Backend):
         next_id, more = self._update_record(next_id, count)
         return create_resource("objects", objects_found, more, next_id), headers
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def add_objects(self, api_root, collection_id, objs, request_time):
         api_root_db = self.client[api_root]
         objects_info = api_root_db["objects"]
@@ -300,7 +299,7 @@ class MongoBackend(Backend):
         status.pop("_id", None)
         return status
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def get_object(self, api_root, collection_id, object_id, filter_args, allowed_filters, limit):
         api_root_db = self.client[api_root]
         objects_info = api_root_db["objects"]
@@ -334,7 +333,7 @@ class MongoBackend(Backend):
         next_id, more = self._update_record(next_id, count)
         return create_resource("objects", objects_found, more, next_id), headers
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def delete_object(self, api_root, collection_id, object_id, filter_args, allowed_filters):
         api_root_db = self.client[api_root]
         objects_info = api_root_db["objects"]
@@ -361,7 +360,7 @@ class MongoBackend(Backend):
         else:
             raise ProcessingError("Object '{}' not found".format(object_id), 404)
 
-    @catch_mongodb_error
+    @catch_esdb_error
     def get_object_versions(self, api_root, collection_id, object_id, filter_args, allowed_filters, limit):
         api_root_db = self.client[api_root]
         objects_info = api_root_db["objects"]

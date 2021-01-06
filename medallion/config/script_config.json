@@ -1,0 +1,15 @@
+{
+  "backend": {
+    "module_class": "MongoBackend",
+    "uri": "mongodb://root:LABpassword1@192.168.20.210:27017/"
+
+  },
+  "users": {
+    "admin": "LABpassword1",
+    "user1": "LABpassword1",
+    "user2": "LABpassword1"
+  },
+  "taxii": {
+    "max_page_size": 100
+  }
+}

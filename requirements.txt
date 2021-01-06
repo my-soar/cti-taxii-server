@@ -1,1 +1,10 @@
 -e .[docs,test]
+
+setuptools~=51.1.1
+pymongo~=3.11.2
+medallion~=3.0.0
+pytest~=6.2.1
+Flask~=1.1.2
+six~=1.15.0
+pytz~=2020.5
+elasticsearch~=7.10.1

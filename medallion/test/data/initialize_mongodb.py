@@ -6,7 +6,7 @@ from medallion.test.generic_initialize_mongodb import (
 )
 
 
-def reset_db(url="mongodb://root:example@localhost:27017/"):
+def reset_db(url="mongodb://root:LABpassword1@192.168.20.210:27017/"):
     client = connect_to_client(url)
     client.drop_database("discovery_database")
     db = build_new_mongo_databases_and_collection(client)
